@@ -8,7 +8,7 @@ SRCDIR = .
 OBJDIR = obj
 BINDIR = .
 
-SOURCES = main.c robotics_middleware.c tensor_abstraction.c gguf_integration.c hypergraph.c config.c
+SOURCES = main.c robotics_middleware.c tensor_abstraction.c gguf_integration.c hypergraph.c config.c workbench_modules.c
 OBJECTS = $(SOURCES:%.c=$(OBJDIR)/%.o)
 TARGET = robotics-middleware
 
@@ -42,3 +42,4 @@ $(OBJDIR)/tensor_abstraction.o: tensor_abstraction.c tensor_abstraction.h roboti
 $(OBJDIR)/gguf_integration.o: gguf_integration.c gguf_integration.h robotics_middleware.h tensor_abstraction.h
 $(OBJDIR)/hypergraph.o: hypergraph.c robotics_middleware.h
 $(OBJDIR)/config.o: config.c robotics_middleware.h
+$(OBJDIR)/workbench_modules.o: workbench_modules.c robotics_middleware.h tensor_abstraction.h

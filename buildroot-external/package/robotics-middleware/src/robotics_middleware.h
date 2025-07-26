@@ -28,6 +28,39 @@ typedef enum {
     DEVICE_TYPE_CUSTOM
 } device_type_t;
 
+/* Sensor modalities */
+typedef enum {
+    MODALITY_VISUAL = 0,
+    MODALITY_AUDITORY,
+    MODALITY_HAPTIC,
+    MODALITY_THERMAL,
+    MODALITY_PROXIMITY,
+    MODALITY_INERTIAL,
+    MODALITY_CHEMICAL,
+    MODALITY_ELECTROMAGNETIC,
+    MODALITY_CUSTOM
+} sensor_modality_t;
+
+/* Actuator degrees of freedom types */
+typedef enum {
+    DOF_TYPE_ROTATIONAL = 0,
+    DOF_TYPE_LINEAR,
+    DOF_TYPE_PLANAR,
+    DOF_TYPE_SPHERICAL,
+    DOF_TYPE_CUSTOM
+} dof_type_t;
+
+/* Channel types for multi-channel sensors */
+typedef enum {
+    CHANNEL_TYPE_RGB = 0,
+    CHANNEL_TYPE_RGBA,
+    CHANNEL_TYPE_DEPTH,
+    CHANNEL_TYPE_MONO,
+    CHANNEL_TYPE_STEREO,
+    CHANNEL_TYPE_MULTICHANNEL,
+    CHANNEL_TYPE_CUSTOM
+} channel_type_t;
+
 /* Agent states */
 typedef enum {
     AGENT_STATE_IDLE = 0,
@@ -58,14 +91,42 @@ typedef struct device_node device_node_t;
 typedef struct agent agent_t;
 typedef struct tensor_system tensor_system_t;
 typedef struct gguf_context gguf_context_t;
+typedef struct workbench_module workbench_module_t;
+typedef struct module_registry module_registry_t;
 
-/* Tensor specification */
+/* Enhanced tensor specification with robotics semantics */
 struct tensor_spec {
     uint32_t dimensions;
     uint32_t shape[8];      /* Max 8 dimensions */
     tensor_dtype_t dtype;
     bool requires_grad;
     char metadata[MAX_CONFIG_LEN];
+    
+    /* Robotics-specific extensions */
+    union {
+        struct {
+            sensor_modality_t modality;
+            channel_type_t channel_type;
+            uint32_t num_channels;
+            uint32_t width;
+            uint32_t height;
+            float sampling_rate;    /* For temporal sensors */
+        } sensor;
+        
+        struct {
+            uint32_t num_dof;
+            dof_type_t dof_types[8];    /* Type for each DOF */
+            float min_limits[8];        /* Min values for each DOF */
+            float max_limits[8];        /* Max values for each DOF */
+            float max_velocities[8];    /* Max velocities for each DOF */
+        } actuator;
+        
+        struct {
+            uint32_t cognitive_layers;
+            uint32_t memory_capacity;
+            uint32_t processing_units;
+        } processor;
+    } semantics;
 };
 
 /* Tensor structure */
@@ -111,13 +172,90 @@ struct agent {
     void *scheme_context;
 };
 
-/* Hypergraph structure */
+/* Workbench module types */
+typedef enum {
+    MODULE_TYPE_SENSOR = 0,
+    MODULE_TYPE_ACTUATOR,
+    MODULE_TYPE_PROCESSOR,
+    MODULE_TYPE_COMMUNICATION,
+    MODULE_TYPE_COMPOSITE
+} module_type_t;
+
+/* Workbench module states */
+typedef enum {
+    MODULE_STATE_UNINITIALIZED = 0,
+    MODULE_STATE_INITIALIZING,
+    MODULE_STATE_READY,
+    MODULE_STATE_ACTIVE,
+    MODULE_STATE_ERROR,
+    MODULE_STATE_SHUTTING_DOWN
+} module_state_t;
+
+/* Module capabilities */
+typedef struct {
+    bool supports_streaming;
+    bool supports_prediction;
+    bool supports_learning;
+    bool supports_configuration;
+    uint32_t max_input_tensors;
+    uint32_t max_output_tensors;
+} module_capabilities_t;
+
+/* Workbench module */
+struct workbench_module {
+    uint32_t id;
+    char name[MAX_NAME_LEN];
+    char description[MAX_CONFIG_LEN];
+    module_type_t type;
+    module_state_t state;
+    module_capabilities_t capabilities;
+    
+    /* Device/tensor associations */
+    uint32_t device_count;
+    device_node_t *devices[8];  /* Max 8 devices per module */
+    
+    /* Input/output tensors */
+    uint32_t input_count;
+    uint32_t output_count;
+    tensor_t *inputs[8];
+    tensor_t *outputs[8];
+    
+    /* Module-specific data */
+    void *module_data;
+    
+    /* Function pointers for module operations */
+    int (*init)(workbench_module_t *module, const char *config);
+    int (*process)(workbench_module_t *module);
+    int (*configure)(workbench_module_t *module, const char *config);
+    void (*cleanup)(workbench_module_t *module);
+    
+    /* Dependencies */
+    uint32_t dependency_count;
+    workbench_module_t *dependencies[8];
+    
+    uint64_t last_update;
+    pthread_mutex_t mutex;
+};
+
+/* Module registry */
+struct module_registry {
+    workbench_module_t *modules[MAX_DEVICES];  /* Reuse MAX_DEVICES for max modules */
+    uint32_t module_count;
+    pthread_rwlock_t lock;
+};
+
+/* Enhanced hypergraph structure */
 struct hypergraph {
     device_node_t *devices[MAX_DEVICES];
     agent_t *agents[MAX_AGENTS];
+    workbench_module_t *modules[MAX_DEVICES];  /* Modules in the workbench */
     uint32_t device_count;
     uint32_t agent_count;
+    uint32_t module_count;
     pthread_rwlock_t lock;
+    
+    /* Module composition graph */
+    bool module_connections[MAX_DEVICES][MAX_DEVICES];  /* Adjacency matrix for module connections */
 };
 
 /* Tensor system */
@@ -139,10 +277,12 @@ struct gguf_context {
 /* Main robotics context */
 typedef struct {
     hypergraph_t *hypergraph;
+    module_registry_t *module_registry;
     tensor_system_t tensor_sys;
     gguf_context_t gguf_ctx;
     uint32_t next_device_id;
     uint32_t next_agent_id;
+    uint32_t next_module_id;
     char config_path[MAX_CONFIG_LEN];
 } robotics_context_t;
 
@@ -202,8 +342,10 @@ uint64_t tensor_size_bytes(const tensor_spec_t *spec);
 /* Hypergraph operations */
 int hypergraph_add_device(hypergraph_t *graph, device_node_t *device);
 int hypergraph_add_agent(hypergraph_t *graph, agent_t *agent);
+int hypergraph_add_module(hypergraph_t *graph, workbench_module_t *module);
 int hypergraph_remove_device(hypergraph_t *graph, uint32_t device_id);
 int hypergraph_remove_agent(hypergraph_t *graph, uint32_t agent_id);
+int hypergraph_remove_module(hypergraph_t *graph, uint32_t module_id);
 void hypergraph_cleanup(hypergraph_t *graph);
 
 /* Tensor system operations */
@@ -223,5 +365,37 @@ void gguf_cleanup_import(gguf_import_context_t *import_ctx);
 
 /* Configuration */
 int robotics_load_config(robotics_context_t *ctx, const char *config_path);
+
+/* Workbench module operations */
+workbench_module_t* workbench_create_module(const char *name, module_type_t type, 
+                                           const char *description);
+int workbench_register_module(workbench_module_t *module);
+int workbench_connect_modules(workbench_module_t *producer, workbench_module_t *consumer);
+int workbench_disconnect_modules(workbench_module_t *producer, workbench_module_t *consumer);
+int workbench_execute_module(workbench_module_t *module);
+int workbench_execute_pipeline(workbench_module_t **modules, uint32_t count);
+void workbench_destroy_module(workbench_module_t *module);
+
+/* Enhanced device creation with semantic specifications */
+device_node_t* robotics_create_camera_device(const char *name, uint32_t width, uint32_t height,
+                                            channel_type_t channel_type, float fps);
+device_node_t* robotics_create_robot_arm_device(const char *name, uint32_t num_dof,
+                                               const dof_type_t *dof_types,
+                                               const float *min_limits, const float *max_limits);
+device_node_t* robotics_create_imu_device(const char *name, float sampling_rate);
+device_node_t* robotics_create_audio_device(const char *name, uint32_t channels, float sampling_rate);
+
+/* Pre-built workbench modules */
+workbench_module_t* workbench_create_vision_module(const char *name);
+workbench_module_t* workbench_create_control_module(const char *name);
+workbench_module_t* workbench_create_navigation_module(const char *name);
+workbench_module_t* workbench_create_manipulation_module(const char *name);
+
+/* Module registry operations */
+int module_registry_init(module_registry_t *registry);
+void module_registry_cleanup(module_registry_t *registry);
+workbench_module_t* module_registry_find(module_registry_t *registry, const char *name);
+int module_registry_add(module_registry_t *registry, workbench_module_t *module);
+int module_registry_remove(module_registry_t *registry, uint32_t module_id);
 
 #endif /* ROBOTICS_MIDDLEWARE_H */
