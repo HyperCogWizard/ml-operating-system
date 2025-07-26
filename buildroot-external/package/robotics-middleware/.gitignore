@@ -1,0 +1,23 @@
+# Build artifacts
+obj/
+*.o
+robotics-middleware
+*.so
+
+# Temporary files
+*.tmp
+*.bak
+*~
+
+# GGUF exports
+*.gguf
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Test outputs
+test_results/
+coverage.xml
+.coverage

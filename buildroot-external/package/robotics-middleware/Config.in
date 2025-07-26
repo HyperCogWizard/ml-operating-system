@@ -1,0 +1,17 @@
+config BR2_PACKAGE_ROBOTICS_MIDDLEWARE
+	bool "robotics-middleware"
+	help
+	  Robotics Middleware Abstraction for Engineering Workbench
+	  
+	  Provides modular, hypergraph-encoded workbench components for
+	  robotics middleware with tensor-based device abstraction and
+	  GGUF integration support.
+	  
+	  Features:
+	  - Device/sensor/actuator tensor abstractions
+	  - Hypergraph-encoded middleware components
+	  - GGUF serialization for agent states
+	  - Neural-symbolic middleware interfaces
+	  - Real-time tensor field visualization
+	  
+	  https://github.com/HyperCogWizard/ml-operating-system

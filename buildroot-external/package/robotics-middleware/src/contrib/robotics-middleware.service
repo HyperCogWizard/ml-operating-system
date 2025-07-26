@@ -1,0 +1,32 @@
+[Unit]
+Description=Robotics Middleware for Engineering Workbench
+Documentation=https://github.com/HyperCogWizard/ml-operating-system
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/robotics-middleware --daemon --config /etc/robotics/robotics.conf
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+User=root
+Group=root
+
+# Security settings
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/robotics /var/log /tmp
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Environment
+Environment="ROBOTICS_CONFIG_DIR=/etc/robotics"
+Environment="ROBOTICS_DATA_DIR=/var/lib/robotics"
+Environment="ROBOTICS_LOG_DIR=/var/log"
+
+[Install]
+WantedBy=multi-user.target
