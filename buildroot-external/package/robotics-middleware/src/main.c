@@ -45,37 +45,35 @@ static void print_version(void) {
 static int run_test_scenarios(void) {
     printf("Running test scenarios...\n");
     
-    /* Test 1: Create sensor device */
-    tensor_spec_t sensor_spec = {
-        .dimensions = 2,
-        .shape = {640, 480},  /* Camera sensor */
-        .dtype = TENSOR_UINT8,
-        .requires_grad = false
-    };
-    strncpy(sensor_spec.metadata, "camera_rgb", sizeof(sensor_spec.metadata) - 1);
-    
-    device_node_t *camera = robotics_create_device("main_camera", DEVICE_TYPE_SENSOR, &sensor_spec);
+    /* Test 1: Create enhanced sensor devices with semantic specifications */
+    device_node_t *camera = robotics_create_camera_device("main_camera", 640, 480, 
+                                                          CHANNEL_TYPE_RGB, 30.0f);
     if (!camera) {
         printf("Failed to create camera device\n");
         return -1;
     }
     
-    /* Test 2: Create actuator device */
-    tensor_spec_t actuator_spec = {
-        .dimensions = 1,
-        .shape = {6},  /* 6-DOF robot arm */
-        .dtype = TENSOR_FLOAT32,
-        .requires_grad = false
-    };
-    strncpy(actuator_spec.metadata, "robot_arm_joints", sizeof(actuator_spec.metadata) - 1);
+    /* Test 2: Create enhanced actuator device */
+    dof_type_t arm_dofs[] = {DOF_TYPE_ROTATIONAL, DOF_TYPE_ROTATIONAL, DOF_TYPE_ROTATIONAL,
+                            DOF_TYPE_ROTATIONAL, DOF_TYPE_ROTATIONAL, DOF_TYPE_ROTATIONAL};
+    float arm_min_limits[] = {-3.14f, -1.57f, -1.57f, -3.14f, -1.57f, -3.14f};
+    float arm_max_limits[] = {3.14f, 1.57f, 1.57f, 3.14f, 1.57f, 3.14f};
     
-    device_node_t *arm = robotics_create_device("robot_arm", DEVICE_TYPE_ACTUATOR, &actuator_spec);
+    device_node_t *arm = robotics_create_robot_arm_device("robot_arm", 6, arm_dofs, 
+                                                         arm_min_limits, arm_max_limits);
     if (!arm) {
         printf("Failed to create robot arm device\n");
         return -1;
     }
     
-    /* Test 3: Create agent */
+    /* Test 3: Create IMU sensor */
+    device_node_t *imu = robotics_create_imu_device("main_imu", 100.0f);
+    if (!imu) {
+        printf("Failed to create IMU device\n");
+        return -1;
+    }
+    
+    /* Test 4: Create agent */
     agent_config_t agent_config = {
         .cognitive_dimensions = 3,
         .memory_size = 1024,
@@ -91,8 +89,33 @@ static int run_test_scenarios(void) {
         return -1;
     }
     
-    /* Test 4: Update sensor data */
-    uint8_t camera_data[640 * 480];
+    /* Test 5: Create workbench modules */
+    workbench_module_t *vision_module = workbench_create_vision_module("vision_processor");
+    workbench_module_t *control_module = workbench_create_control_module("arm_controller");
+    workbench_module_t *nav_module = workbench_create_navigation_module("navigator");
+    
+    if (!vision_module || !control_module || !nav_module) {
+        printf("Failed to create workbench modules\n");
+        return -1;
+    }
+    
+    /* Test 6: Register modules */
+    if (workbench_register_module(vision_module) < 0 ||
+        workbench_register_module(control_module) < 0 ||
+        workbench_register_module(nav_module) < 0) {
+        printf("Failed to register modules\n");
+        return -1;
+    }
+    
+    /* Test 7: Connect modules in a processing pipeline */
+    if (workbench_connect_modules(vision_module, control_module) < 0 ||
+        workbench_connect_modules(vision_module, nav_module) < 0) {
+        printf("Failed to connect modules\n");
+        return -1;
+    }
+    
+    /* Test 8: Update sensor data */
+    uint8_t camera_data[640 * 480 * 3];  /* RGB data */
     memset(camera_data, 128, sizeof(camera_data));  /* Gray image */
     
     if (tensor_set_data(camera->tensor, camera_data, sizeof(camera_data)) < 0) {
@@ -100,7 +123,7 @@ static int run_test_scenarios(void) {
         return -1;
     }
     
-    /* Test 5: Update actuator commands */
+    /* Test 9: Update actuator commands */
     float arm_positions[6] = {0.0f, 1.57f, -1.57f, 0.0f, 1.57f, 0.0f};
     
     if (tensor_set_data(arm->tensor, arm_positions, sizeof(arm_positions)) < 0) {
@@ -108,22 +131,55 @@ static int run_test_scenarios(void) {
         return -1;
     }
     
-    /* Test 6: Initialize agent cognitive state */
+    /* Test 10: Update IMU data */
+    float imu_data[9] = {0.0f, 0.0f, 9.81f,  /* accel */
+                        0.0f, 0.0f, 0.0f,   /* gyro */
+                        0.0f, 1.0f, 0.0f};  /* mag */
+    
+    if (tensor_set_data(imu->tensor, imu_data, sizeof(imu_data)) < 0) {
+        printf("Failed to set IMU data\n");
+        return -1;
+    }
+    
+    /* Test 11: Initialize agent cognitive state */
     if (tensor_random(control_agent->cognitive_tensor) < 0) {
         printf("Failed to initialize agent state\n");
+        return -1;
+    }
+    
+    /* Test 12: Execute modular processing pipeline */
+    workbench_module_t *pipeline[] = {vision_module, control_module, nav_module};
+    if (workbench_execute_pipeline(pipeline, 3) < 0) {
+        printf("Failed to execute processing pipeline\n");
         return -1;
     }
     
     printf("All test scenarios passed!\n");
     
     /* Print tensor information */
-    printf("\nTensor Information:\n");
-    printf("Camera tensor:\n");
+    printf("\nEnhanced Tensor Information:\n");
+    printf("Camera tensor (RGB %ux%u @ %.1f fps):\n", 
+           camera->tensor->spec.semantics.sensor.width,
+           camera->tensor->spec.semantics.sensor.height,
+           camera->tensor->spec.semantics.sensor.sampling_rate);
     tensor_print_info(camera->tensor);
-    printf("\nArm tensor:\n");
+    
+    printf("\nArm tensor (%u DoF):\n", arm->tensor->spec.semantics.actuator.num_dof);
     tensor_print_info(arm->tensor);
+    
+    printf("\nIMU tensor (%.1f Hz):\n", imu->tensor->spec.semantics.sensor.sampling_rate);
+    tensor_print_info(imu->tensor);
+    
     printf("\nAgent cognitive tensor:\n");
     tensor_print_info(control_agent->cognitive_tensor);
+    
+    printf("\nWorkbench Modules:\n");
+    printf("  Vision Module: %s (Type: %d, State: %d)\n", 
+           vision_module->name, vision_module->type, vision_module->state);
+    printf("  Control Module: %s (Type: %d, State: %d)\n",
+           control_module->name, control_module->type, control_module->state);
+    printf("  Navigation Module: %s (Type: %d, State: %d)\n",
+           nav_module->name, nav_module->type, nav_module->state);
     
     return 0;
 }

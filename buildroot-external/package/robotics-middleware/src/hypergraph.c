@@ -136,8 +136,69 @@ int hypergraph_remove_agent(hypergraph_t *graph, uint32_t agent_id) {
 }
 
 /*
- * Cleanup hypergraph
+ * Add module to hypergraph
  */
+int hypergraph_add_module(hypergraph_t *graph, workbench_module_t *module) {
+    if (!graph || !module) {
+        return -EINVAL;
+    }
+    
+    pthread_rwlock_wrlock(&graph->lock);
+    
+    if (graph->module_count >= MAX_DEVICES) {
+        pthread_rwlock_unlock(&graph->lock);
+        return -ENOSPC;
+    }
+    
+    graph->modules[graph->module_count] = module;
+    graph->module_count++;
+    
+    pthread_rwlock_unlock(&graph->lock);
+    
+    printf("Added module to hypergraph: %s (total: %u)\n", 
+           module->name, graph->module_count);
+    return 0;
+}
+
+/*
+ * Remove module from hypergraph
+ */
+int hypergraph_remove_module(hypergraph_t *graph, uint32_t module_id) {
+    if (!graph) {
+        return -EINVAL;
+    }
+    
+    pthread_rwlock_wrlock(&graph->lock);
+    
+    for (uint32_t i = 0; i < graph->module_count; i++) {
+        if (graph->modules[i] && graph->modules[i]->id == module_id) {
+            /* Clear connections for this module */
+            for (uint32_t j = 0; j < MAX_DEVICES; j++) {
+                graph->module_connections[i][j] = false;
+                graph->module_connections[j][i] = false;
+            }
+            
+            /* Destroy the module */
+            workbench_destroy_module(graph->modules[i]);
+            
+            /* Shift remaining modules */
+            for (uint32_t j = i; j < graph->module_count - 1; j++) {
+                graph->modules[j] = graph->modules[j + 1];
+            }
+            graph->modules[graph->module_count - 1] = NULL;
+            graph->module_count--;
+            
+            pthread_rwlock_unlock(&graph->lock);
+            
+            printf("Removed module %u from hypergraph (remaining: %u)\n", 
+                   module_id, graph->module_count);
+            return 0;
+        }
+    }
+    
+    pthread_rwlock_unlock(&graph->lock);
+    return -ENOENT;
+}
 void hypergraph_cleanup(hypergraph_t *graph) {
     if (!graph) {
         return;
@@ -168,6 +229,18 @@ void hypergraph_cleanup(hypergraph_t *graph) {
         }
     }
     graph->agent_count = 0;
+    
+    /* Free all modules */
+    for (uint32_t i = 0; i < graph->module_count; i++) {
+        if (graph->modules[i]) {
+            workbench_destroy_module(graph->modules[i]);
+            graph->modules[i] = NULL;
+        }
+    }
+    graph->module_count = 0;
+    
+    /* Clear module connections */
+    memset(graph->module_connections, 0, sizeof(graph->module_connections));
     
     pthread_rwlock_unlock(&graph->lock);
     pthread_rwlock_destroy(&graph->lock);

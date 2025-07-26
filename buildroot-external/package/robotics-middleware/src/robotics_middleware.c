@@ -21,8 +21,8 @@
 #include "gguf_integration.h"
 
 /* Global state for the robotics middleware */
-static robotics_context_t g_robotics_ctx = {0};
-static bool g_initialized = false;
+robotics_context_t g_robotics_ctx = {0};
+bool g_initialized = false;
 static pthread_mutex_t g_ctx_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /*
@@ -45,8 +45,25 @@ int robotics_middleware_init(const char *config_path) {
         return -ENOMEM;
     }
     
+    /* Initialize module registry */
+    g_robotics_ctx.module_registry = calloc(1, sizeof(module_registry_t));
+    if (!g_robotics_ctx.module_registry) {
+        free(g_robotics_ctx.hypergraph);
+        pthread_mutex_unlock(&g_ctx_mutex);
+        return -ENOMEM;
+    }
+    
+    if (module_registry_init(g_robotics_ctx.module_registry) < 0) {
+        free(g_robotics_ctx.module_registry);
+        free(g_robotics_ctx.hypergraph);
+        pthread_mutex_unlock(&g_ctx_mutex);
+        return -EINVAL;
+    }
+    
     /* Initialize tensor system */
     if (tensor_system_init(&g_robotics_ctx.tensor_sys) < 0) {
+        module_registry_cleanup(g_robotics_ctx.module_registry);
+        free(g_robotics_ctx.module_registry);
         free(g_robotics_ctx.hypergraph);
         pthread_mutex_unlock(&g_ctx_mutex);
         return -EINVAL;
@@ -55,6 +72,8 @@ int robotics_middleware_init(const char *config_path) {
     /* Initialize GGUF integration */
     if (gguf_integration_init(&g_robotics_ctx.gguf_ctx) < 0) {
         tensor_system_cleanup(&g_robotics_ctx.tensor_sys);
+        module_registry_cleanup(g_robotics_ctx.module_registry);
+        free(g_robotics_ctx.module_registry);
         free(g_robotics_ctx.hypergraph);
         pthread_mutex_unlock(&g_ctx_mutex);
         return -EINVAL;
@@ -64,6 +83,8 @@ int robotics_middleware_init(const char *config_path) {
     if (config_path && robotics_load_config(&g_robotics_ctx, config_path) < 0) {
         gguf_integration_cleanup(&g_robotics_ctx.gguf_ctx);
         tensor_system_cleanup(&g_robotics_ctx.tensor_sys);
+        module_registry_cleanup(g_robotics_ctx.module_registry);
+        free(g_robotics_ctx.module_registry);
         free(g_robotics_ctx.hypergraph);
         pthread_mutex_unlock(&g_ctx_mutex);
         return -EINVAL;
@@ -244,6 +265,12 @@ void robotics_middleware_cleanup(void) {
     /* Cleanup tensor system */
     tensor_system_cleanup(&g_robotics_ctx.tensor_sys);
     
+    /* Cleanup module registry */
+    if (g_robotics_ctx.module_registry) {
+        module_registry_cleanup(g_robotics_ctx.module_registry);
+        free(g_robotics_ctx.module_registry);
+    }
+    
     /* Cleanup hypergraph */
     if (g_robotics_ctx.hypergraph) {
         hypergraph_cleanup(g_robotics_ctx.hypergraph);
@@ -271,6 +298,16 @@ int robotics_get_status(robotics_status_t *status) {
     status->device_count = g_robotics_ctx.hypergraph->device_count;
     status->agent_count = g_robotics_ctx.hypergraph->agent_count;
     status->tensor_memory_usage = tensor_system_memory_usage(&g_robotics_ctx.tensor_sys);
+    
+    /* Count active agents */
+    uint32_t active_agents = 0;
+    for (uint32_t i = 0; i < g_robotics_ctx.hypergraph->agent_count; i++) {
+        if (g_robotics_ctx.hypergraph->agents[i] && 
+            g_robotics_ctx.hypergraph->agents[i]->state == AGENT_STATE_ACTIVE) {
+            active_agents++;
+        }
+    }
+    status->active_agents = active_agents;
     
     pthread_mutex_unlock(&g_ctx_mutex);
     
