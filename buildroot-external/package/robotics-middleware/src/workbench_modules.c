@@ -579,3 +579,13 @@ workbench_module_t* workbench_create_manipulation_module(const char *name) {
     
     return module;
 }
+
+/*
+ * Get access to the global module registry for GGUF export
+ */
+module_registry_t* workbench_get_module_registry(void) {
+    if (!g_registry_initialized) {
+        return NULL;
+    }
+    return &g_module_registry;
+}
