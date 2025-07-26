@@ -333,6 +333,10 @@ int robotics_agent_execute_scheme(agent_t *agent, const char *scheme_code);
 int robotics_export_gguf(const char *filepath);
 int robotics_import_gguf(const char *filepath);
 
+/* Enhanced GGUF integration with P-System support */
+int robotics_export_enhanced_gguf(const char *filepath, const char *membrane_name);
+int robotics_import_enhanced_gguf(const char *filepath);
+
 /* Tensor operations */
 tensor_t* tensor_create(const tensor_spec_t *spec);
 void tensor_destroy(tensor_t *tensor);
@@ -397,5 +401,8 @@ void module_registry_cleanup(module_registry_t *registry);
 workbench_module_t* module_registry_find(module_registry_t *registry, const char *name);
 int module_registry_add(module_registry_t *registry, workbench_module_t *module);
 int module_registry_remove(module_registry_t *registry, uint32_t module_id);
+
+/* Get access to global module registry for GGUF export */
+module_registry_t* workbench_get_module_registry(void);
 
 #endif /* ROBOTICS_MIDDLEWARE_H */

@@ -24,16 +24,21 @@ static void signal_handler(int sig) {
 
 static void print_usage(const char *program_name) {
     printf("Usage: %s [OPTIONS]\n", program_name);
-    printf("Robotics Engineering Workbench with GGUF Integration\n\n");
+    printf("Robotics Engineering Workbench with Enhanced GGUF Integration\n\n");
     printf("Options:\n");
-    printf("  -c, --config PATH     Configuration file path\n");
-    printf("  -d, --daemon          Run as daemon\n");
-    printf("  -e, --export FILE     Export system state to GGUF file\n");
-    printf("  -i, --import FILE     Import system state from GGUF file\n");
-    printf("  -s, --status          Show system status\n");
-    printf("  -t, --test            Run test scenarios\n");
-    printf("  -h, --help            Show this help message\n");
-    printf("  -v, --version         Show version information\n");
+    printf("  -c, --config PATH       Configuration file path\n");
+    printf("  -d, --daemon            Run as daemon\n");
+    printf("  -e, --export FILE       Export system state to GGUF file\n");
+    printf("  -E, --export-enhanced FILE [MEMBRANE]\n");
+    printf("                          Export complete system state with P-System support\n");
+    printf("  -i, --import FILE       Import system state from GGUF file\n");
+    printf("  -I, --import-enhanced FILE\n");
+    printf("                          Import complete system state with configurations\n");
+    printf("  -m, --membrane NAME     P-System membrane name for enhanced export\n");
+    printf("  -s, --status            Show system status\n");
+    printf("  -t, --test              Run test scenarios\n");
+    printf("  -h, --help              Show this help message\n");
+    printf("  -v, --version           Show version information\n");
 }
 
 static void print_version(void) {
@@ -207,24 +212,30 @@ int main(int argc, char *argv[]) {
     int opt;
     const char *config_path = "/etc/robotics/robotics.conf";
     const char *export_file = NULL;
+    const char *export_enhanced_file = NULL;
     const char *import_file = NULL;
+    const char *import_enhanced_file = NULL;
+    const char *membrane_name = NULL;
     bool daemon_mode = false;
     bool show_status_flag = false;
     bool run_tests = false;
     
     static struct option long_options[] = {
-        {"config",  required_argument, 0, 'c'},
-        {"daemon",  no_argument,       0, 'd'},
-        {"export",  required_argument, 0, 'e'},
-        {"import",  required_argument, 0, 'i'},
-        {"status",  no_argument,       0, 's'},
-        {"test",    no_argument,       0, 't'},
-        {"help",    no_argument,       0, 'h'},
-        {"version", no_argument,       0, 'v'},
+        {"config",          required_argument, 0, 'c'},
+        {"daemon",          no_argument,       0, 'd'},
+        {"export",          required_argument, 0, 'e'},
+        {"export-enhanced", required_argument, 0, 'E'},
+        {"import",          required_argument, 0, 'i'},
+        {"import-enhanced", required_argument, 0, 'I'},
+        {"membrane",        required_argument, 0, 'm'},
+        {"status",          no_argument,       0, 's'},
+        {"test",            no_argument,       0, 't'},
+        {"help",            no_argument,       0, 'h'},
+        {"version",         no_argument,       0, 'v'},
         {0, 0, 0, 0}
     };
     
-    while ((opt = getopt_long(argc, argv, "c:de:i:sthv", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "c:de:E:i:I:m:sthv", long_options, NULL)) != -1) {
         switch (opt) {
             case 'c':
                 config_path = optarg;
@@ -235,8 +246,17 @@ int main(int argc, char *argv[]) {
             case 'e':
                 export_file = optarg;
                 break;
+            case 'E':
+                export_enhanced_file = optarg;
+                break;
             case 'i':
                 import_file = optarg;
+                break;
+            case 'I':
+                import_enhanced_file = optarg;
+                break;
+            case 'm':
+                membrane_name = optarg;
                 break;
             case 's':
                 show_status_flag = true;
@@ -273,6 +293,16 @@ int main(int argc, char *argv[]) {
         }
     }
     
+    /* Handle enhanced import if requested */
+    if (import_enhanced_file) {
+        printf("Importing enhanced system state from: %s\n", import_enhanced_file);
+        if (robotics_import_enhanced_gguf(import_enhanced_file) < 0) {
+            fprintf(stderr, "Failed to import enhanced GGUF file: %s\n", import_enhanced_file);
+            robotics_middleware_cleanup();
+            return 1;
+        }
+    }
+    
     /* Run tests if requested */
     if (run_tests) {
         if (run_test_scenarios() < 0) {
@@ -292,6 +322,19 @@ int main(int argc, char *argv[]) {
         printf("Exporting system state to: %s\n", export_file);
         if (robotics_export_gguf(export_file) < 0) {
             fprintf(stderr, "Failed to export GGUF file: %s\n", export_file);
+            robotics_middleware_cleanup();
+            return 1;
+        }
+    }
+    
+    /* Handle enhanced export if requested */
+    if (export_enhanced_file) {
+        printf("Exporting enhanced system state to: %s\n", export_enhanced_file);
+        if (membrane_name) {
+            printf("Using P-System membrane: %s\n", membrane_name);
+        }
+        if (robotics_export_enhanced_gguf(export_enhanced_file, membrane_name) < 0) {
+            fprintf(stderr, "Failed to export enhanced GGUF file: %s\n", export_enhanced_file);
             robotics_middleware_cleanup();
             return 1;
         }

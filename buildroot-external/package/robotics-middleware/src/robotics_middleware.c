@@ -249,6 +249,48 @@ int robotics_import_gguf(const char *filepath) {
 }
 
 /*
+ * Export complete system state to enhanced GGUF format with P-System support
+ */
+int robotics_export_enhanced_gguf(const char *filepath, const char *membrane_name) {
+    if (!g_initialized || !filepath) {
+        return -EINVAL;
+    }
+    
+    pthread_mutex_lock(&g_ctx_mutex);
+    
+    gguf_enhanced_export_context_t export_ctx = {0};
+    
+    /* Prepare enhanced export with complete system state */
+    int ret = gguf_prepare_enhanced_export(&g_robotics_ctx, &export_ctx);
+    if (ret < 0) {
+        pthread_mutex_unlock(&g_ctx_mutex);
+        return ret;
+    }
+    
+    /* Create P-System membrane if name provided */
+    if (membrane_name) {
+        gguf_create_membrane(membrane_name, &export_ctx);
+    }
+    
+    /* Write enhanced GGUF file */
+    ret = gguf_write_enhanced_file(&export_ctx, filepath);
+    
+    /* Cleanup export context */
+    gguf_cleanup_enhanced_export(&export_ctx);
+    
+    pthread_mutex_unlock(&g_ctx_mutex);
+    
+    if (ret == 0) {
+        printf("Exported enhanced system state to GGUF: %s\n", filepath);
+        if (membrane_name) {
+            printf("  P-System membrane: %s\n", membrane_name);
+        }
+    }
+    
+    return ret;
+}
+
+/*
  * Cleanup the robotics middleware system
  */
 void robotics_middleware_cleanup(void) {
@@ -312,4 +354,38 @@ int robotics_get_status(robotics_status_t *status) {
     pthread_mutex_unlock(&g_ctx_mutex);
     
     return 0;
+}
+
+/*
+ * Import complete system state from enhanced GGUF format with P-System support
+ */
+int robotics_import_enhanced_gguf(const char *filepath) {
+    if (!g_initialized || !filepath) {
+        return -EINVAL;
+    }
+    
+    pthread_mutex_lock(&g_ctx_mutex);
+    
+    gguf_enhanced_import_context_t import_ctx = {0};
+    
+    /* Read enhanced GGUF file */
+    int ret = gguf_read_enhanced_file(&import_ctx, filepath);
+    if (ret < 0) {
+        pthread_mutex_unlock(&g_ctx_mutex);
+        return ret;
+    }
+    
+    /* Restore enhanced system state */
+    ret = gguf_restore_enhanced_system(&g_robotics_ctx, &import_ctx);
+    
+    /* Cleanup import context */
+    gguf_cleanup_enhanced_import(&import_ctx);
+    
+    pthread_mutex_unlock(&g_ctx_mutex);
+    
+    if (ret == 0) {
+        printf("Imported enhanced system state from GGUF: %s\n", filepath);
+    }
+    
+    return ret;
 }
